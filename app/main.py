@@ -55,6 +55,8 @@ allowed_origins = allowed_origins or [
     "http://127.0.0.1:19006",
     "http://localhost:8081",  # Expo dev server
     "http://127.0.0.1:8081",  # Expo dev server
+    "http://54.164.79.71",     # Production frontend (port 80)
+    "http://54.164.79.71:3000", # Production frontend (port 3000)
 ]
 
 app.add_middleware(
