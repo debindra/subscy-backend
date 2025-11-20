@@ -37,9 +37,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error stopping reminder scheduler: {str(e)}")
 
 
+# Get API root path from environment (for nginx /api/ prefix)
+api_root = os.getenv("API_ROOT", "")
+
 app = FastAPI(
     title="Subscription Tracking API (FastAPI)",
-    lifespan=lifespan
+    lifespan=lifespan,
+    openapi_url=f"{api_root}/openapi.json",
+    docs_url=f"{api_root}/docs",
+    redoc_url=f"{api_root}/redoc",
 )
 
 frontend_url = os.getenv("FRONTEND_URL")
