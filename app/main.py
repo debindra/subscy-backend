@@ -57,6 +57,8 @@ allowed_origins = allowed_origins or [
     "http://127.0.0.1:8081",  # Expo dev server
     "http://54.164.79.71",     # Production frontend (port 80)
     "http://54.164.79.71:3000", # Production frontend (port 3000)
+    "http://subsy.tech",
+    "https://subsy.tech",
 ]
 
 app.add_middleware(
@@ -74,6 +76,7 @@ app.add_middleware(
         "Origin",
         "Access-Control-Request-Method",
         "Access-Control-Request-Headers",
+        "X-Account-Context",
     ],
     expose_headers=["Authorization"],
 )
