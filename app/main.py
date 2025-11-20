@@ -89,13 +89,13 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(subscriptions.router, prefix="/subscriptions", tags=["subscriptions"])
-app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
-app.include_router(settings.router, prefix="/settings", tags=["settings"])
-app.include_router(devices.router, prefix="/devices", tags=["devices"])
-app.include_router(business.router, prefix="/business", tags=["business"])
-app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
+# app.include_router(auth.router, prefix="/auth", tags=["auth"])
+# app.include_router(subscriptions.router, prefix="/subscriptions", tags=["subscriptions"])
+# app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+# app.include_router(settings.router, prefix="/settings", tags=["settings"])
+# app.include_router(devices.router, prefix="/devices", tags=["devices"])
+# app.include_router(business.router, prefix="/business", tags=["business"])
+# app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
 
 
 @app.get("/")
