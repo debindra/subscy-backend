@@ -98,6 +98,29 @@ app.include_router(business.router, prefix="/business", tags=["business"])
 app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
 
 
+@app.get("/")
+def root():
+    """Root endpoint with API information"""
+    return {
+        "name": "Subscription Tracking API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/docs",
+        "redoc": "/redoc",
+        "openapi": "/openapi.json",
+        "health": "/health",
+        "endpoints": {
+            "auth": "/auth",
+            "subscriptions": "/subscriptions",
+            "analytics": "/analytics",
+            "settings": "/settings",
+            "devices": "/devices",
+            "business": "/business",
+            "reminders": "/reminders",
+        }
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
