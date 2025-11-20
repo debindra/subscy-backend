@@ -61,11 +61,12 @@ allowed_origins = allowed_origins or [
     "https://subsy.tech",
 ]
 
+# CORS configuration - must be added before routers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=[
         "Content-Type",
         "Authorization",
@@ -79,6 +80,7 @@ app.add_middleware(
         "X-Account-Context",
     ],
     expose_headers=["Authorization"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
