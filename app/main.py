@@ -39,13 +39,15 @@ async def lifespan(app: FastAPI):
 
 # Get API root path from environment (for nginx /api/ prefix)
 api_root = os.getenv("API_ROOT", "")
+root_path = os.getenv("ROOT_PATH", api_root)  # Root path for reverse proxy
 
 app = FastAPI(
     title="Subscription Tracking API (FastAPI)",
     lifespan=lifespan,
-    openapi_url=f"{api_root}/openapi.json",
-    docs_url=f"{api_root}/docs",
-    redoc_url=f"{api_root}/redoc",
+    root_path=root_path if root_path else None,  # Tell FastAPI it's behind a proxy
+    openapi_url="/openapi.json",  # Internal path (nginx will handle /api/ prefix)
+    docs_url="/docs",  # Internal path
+    redoc_url="/redoc",  # Internal path
 )
 
 frontend_url = os.getenv("FRONTEND_URL")
@@ -89,13 +91,13 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
-# app.include_router(auth.router, prefix="/auth", tags=["auth"])
-# app.include_router(subscriptions.router, prefix="/subscriptions", tags=["subscriptions"])
-# app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
-# app.include_router(settings.router, prefix="/settings", tags=["settings"])
-# app.include_router(devices.router, prefix="/devices", tags=["devices"])
-# app.include_router(business.router, prefix="/business", tags=["business"])
-# app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(subscriptions.router, prefix="/subscriptions", tags=["subscriptions"])
+app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+app.include_router(settings.router, prefix="/settings", tags=["settings"])
+app.include_router(devices.router, prefix="/devices", tags=["devices"])
+app.include_router(business.router, prefix="/business", tags=["business"])
+app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
 
 
 @app.get("/")

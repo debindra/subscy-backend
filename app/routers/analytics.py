@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 from app.core.dependencies import get_current_user
 from app.core.supabase import supabase
-from app.core.plan_limits import get_plan_limits
+from app.core.plan_limits import get_plan_limits, ensure_feature
 
 router = APIRouter()
 
@@ -71,8 +71,17 @@ async def get_spending_summary(current_user: dict = Depends(get_current_user)):
 
 @router.get("/by-category")
 async def get_spending_by_category(current_user: dict = Depends(get_current_user)):
-    """Get spending breakdown by category"""
+    """Get spending breakdown by category (Pro feature)"""
     try:
+        account_type = current_user.get("accountType", "free")
+        # Gate this endpoint behind Pro tier
+        try:
+            ensure_feature(account_type, "categorization")
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Category analytics is a Pro feature. Upgrade to Pro to view spending breakdown by category."
+            )
         response = supabase.table("subscriptions")\
             .select("*")\
             .eq("userId", current_user["id"])\
@@ -119,7 +128,7 @@ async def get_monthly_trend(
 ):
     """Get monthly spending trend over the specified number of months"""
     try:
-        account_type = current_user.get("accountType", "personal")
+        account_type = current_user.get("accountType", "free")
         plan_limits = get_plan_limits(account_type)
         trend_limits = plan_limits.get("analytics", {}).get("monthly_trend", {})
 

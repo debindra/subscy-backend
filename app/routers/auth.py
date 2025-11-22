@@ -26,7 +26,7 @@ class SignUpDTO(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
     fullName: Optional[str] = None
-    accountType: Literal["personal", "business"] = "personal"
+    accountType: Literal["personal", "business", "free", "pro", "family"] = "free"
     companyName: Optional[str] = None
     companyAddress: Optional[str] = None
     companyTaxId: Optional[str] = None
@@ -76,6 +76,24 @@ class ChangePasswordDTO(BaseModel):
     @classmethod
     def validate_password_strength(cls, value: str) -> str:
         return ensure_password_strength(value)
+
+
+class CreateAccountContextDTO(BaseModel):
+    accountType: Literal["personal", "business", "free", "pro", "family"]
+    companyName: Optional[str] = None
+    companyAddress: Optional[str] = None
+    companyTaxId: Optional[str] = None
+    companyPhone: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_business_fields(self):
+        if self.accountType == "business" and not self.companyName:
+            raise ValueError("companyName is required for business accounts")
+        return self
+
+
+class SwitchAccountContextDTO(BaseModel):
+    accountContext: Literal["personal", "business"]
 
 
 class Tokens(BaseModel):
@@ -440,6 +458,191 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to change password. Please try again."
+        )
+
+
+@router.get("/account-contexts")
+async def get_account_contexts(current_user: dict = Depends(get_current_user)):
+    """Get available account contexts for the current user"""
+    try:
+        metadata = current_user.get("user_metadata", {})
+        current_account_type = metadata.get("account_type", "free")
+        # Map legacy "personal" to "free"
+        if current_account_type == "personal":
+            current_account_type = "free"
+        
+        # Check if user has business profile (indicates they have business context)
+        has_business_profile = False
+        try:
+            profile_response = supabase.table("business_profiles")\
+                .select("id")\
+                .eq("userId", current_user["id"])\
+                .execute()
+            has_business_profile = len(profile_response.data) > 0
+        except Exception:
+            pass
+        
+        available_contexts = []
+        
+        # Always include personal
+        available_contexts.append({
+            "context": "personal",
+            "label": "Personal",
+            "isActive": current_account_type == "free" or current_account_type == "personal"
+        })
+        
+        # Include business if they have business profile or current account is business
+        if has_business_profile or current_account_type == "business":
+            available_contexts.append({
+                "context": "business",
+                "label": "Business",
+                "isActive": current_account_type == "business"
+            })
+        
+        return {
+            "availableContexts": available_contexts,
+            "currentContext": current_account_type
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get account contexts: {str(e)}"
+        )
+
+
+@router.post("/create-account-context")
+async def create_account_context(
+    dto: CreateAccountContextDTO,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create an additional account context for the user"""
+    try:
+        metadata = current_user.get("user_metadata", {})
+        current_account_type = metadata.get("account_type", "free")
+        # Map legacy "personal" to "free"
+        if current_account_type == "personal":
+            current_account_type = "free"
+        
+        # Check if user already has this account type
+        if current_account_type == dto.accountType:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You already have a {dto.accountType} account"
+            )
+        
+        # If creating business context, create business profile
+        if dto.accountType == "business":
+            try:
+                profile_payload = {
+                    "userId": current_user["id"],
+                    "companyName": dto.companyName,
+                    "companyAddress": dto.companyAddress,
+                    "companyTaxId": dto.companyTaxId,
+                    "companyPhone": dto.companyPhone,
+                }
+                profile_payload = {k: v for k, v in profile_payload.items() if v is not None}
+                
+                supabase.table("business_profiles").upsert(
+                    profile_payload,
+                    on_conflict="userId"
+                ).execute()
+                
+                # Update user metadata to include business account info
+                updated_metadata = metadata.copy()
+                updated_metadata.update({
+                    "has_business_context": True,
+                    "company_name": dto.companyName,
+                    "company_address": dto.companyAddress,
+                    "company_tax_id": dto.companyTaxId,
+                    "company_phone": dto.companyPhone,
+                })
+                
+                supabase_admin.auth.admin.update_user_by_id(
+                    current_user["id"],
+                    {
+                        "user_metadata": {k: v for k, v in updated_metadata.items() if v is not None}
+                    }
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create business profile: {str(e)}"
+                )
+        
+        return {
+            "message": f"{dto.accountType.capitalize()} account context created successfully",
+            "accountType": dto.accountType
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create account context: {str(e)}"
+        )
+
+
+@router.post("/switch-account-context")
+async def switch_account_context(
+    dto: SwitchAccountContextDTO,
+    current_user: dict = Depends(get_current_user)
+):
+    """Switch the active account context"""
+    try:
+        metadata = current_user.get("user_metadata", {})
+        current_account_type = metadata.get("account_type", "free")
+        # Map legacy "personal" to "free"
+        if current_account_type == "personal":
+            current_account_type = "free"
+        
+        # Validate that user has access to the requested context
+        if dto.accountContext == "business":
+            # Check if user has business profile
+            try:
+                profile_response = supabase.table("business_profiles")\
+                    .select("id")\
+                    .eq("userId", current_user["id"])\
+                    .execute()
+                if len(profile_response.data) == 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Business account context not available. Please create a business account first."
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Business account context not available"
+                )
+        
+        # Update user metadata with new account type
+        updated_metadata = metadata.copy()
+        updated_metadata["account_type"] = dto.accountContext
+        
+        try:
+            supabase_admin.auth.admin.update_user_by_id(
+                current_user["id"],
+                {
+                    "user_metadata": updated_metadata
+                }
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to switch account context: {str(e)}"
+            )
+        
+        return {
+            "message": f"Switched to {dto.accountContext} account context",
+            "accountContext": dto.accountContext
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to switch account context: {str(e)}"
         )
 
 

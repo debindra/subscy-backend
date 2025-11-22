@@ -19,7 +19,7 @@ class BusinessProfileDTO(BaseModel):
 @router.get("/profile")
 async def get_business_profile(current_user: dict = Depends(get_current_user)):
     """Fetch the current user's business profile."""
-    if current_user.get("accountType", "personal") != "business":
+    if current_user.get("accountType", "free") != "business":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Business account required"
@@ -58,7 +58,7 @@ async def upsert_business_profile(
     current_user: dict = Depends(get_current_user)
 ):
     """Create or update the current user's business profile."""
-    if current_user.get("accountType", "personal") != "business":
+    if current_user.get("accountType", "free") != "business":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Business account required"
@@ -111,7 +111,7 @@ async def upsert_business_profile(
 @router.get("/plan")
 async def get_current_plan(current_user: dict = Depends(get_current_user)):
     """Return plan details and limits for the authenticated user."""
-    account_type = current_user.get("accountType", "personal")
+    account_type = current_user.get("accountType", "free")
     plan_limits = get_plan_limits(account_type)
 
     return {

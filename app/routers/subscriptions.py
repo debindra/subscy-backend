@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 from app.core.dependencies import get_current_user
 from app.core.supabase import supabase
-from app.core.plan_limits import get_plan_limits
+from app.core.plan_limits import get_plan_limits, ensure_feature
 
 router = APIRouter()
 
@@ -54,9 +54,11 @@ async def create_subscription(
 ):
     """Create a new subscription"""
     try:
-        plan_limits = get_plan_limits(current_user.get("accountType", "personal"))
+        account_type = current_user.get("accountType", "free")
+        plan_limits = get_plan_limits(account_type)
         max_subscriptions = plan_limits.get("max_subscriptions")
 
+        # Check subscription limit
         if max_subscriptions is not None:
             count_response = supabase.table("subscriptions")\
                 .select("id", count="exact")\
@@ -70,8 +72,31 @@ async def create_subscription(
             if existing_count >= max_subscriptions:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Subscription limit reached for your current plan."
+                    detail=f"Subscription limit reached. Upgrade to Pro for unlimited subscriptions."
                 )
+
+        # Validate categorization feature (free tier cannot use categories)
+        if dto.category and dto.category.strip() and dto.category.lower() != "uncategorized":
+            try:
+                ensure_feature(account_type, "categorization")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Categorization is a Pro feature. Upgrade to Pro to organize subscriptions by category."
+                )
+
+        # Validate smart renewal management (free tier has limited reminder features)
+        if dto.reminderEnabled:
+            try:
+                ensure_feature(account_type, "smart_renewal_management")
+            except ValueError:
+                # Free tier can still enable reminders, but with limited customization
+                # Only restrict if trying to use advanced features (custom reminder days < 7 or > 7)
+                if dto.reminderDaysBefore and dto.reminderDaysBefore != 7:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Custom reminder timing is a Pro feature. Free tier uses 7-day reminders. Upgrade to Pro for customizable reminders."
+                    )
 
         # Validate required date field
         if not dto.nextRenewalDate or not dto.nextRenewalDate.strip():
@@ -87,7 +112,7 @@ async def create_subscription(
             "currency": dto.currency,
             "billingCycle": dto.billingCycle,
             "nextRenewalDate": dto.nextRenewalDate.strip(),
-            "category": dto.category,
+            "category": dto.category if (dto.category and dto.category.strip() and dto.category.lower() != "uncategorized") else "Uncategorized",
             "description": dto.description,
             "website": dto.website,
             "isActive": dto.isActive,
@@ -205,6 +230,8 @@ async def update_subscription(
 ):
     """Update a subscription"""
     try:
+        account_type = current_user.get("accountType", "free")
+        
         # First verify the subscription exists and belongs to the user
         existing = supabase.table("subscriptions")\
             .select("*")\
@@ -229,7 +256,18 @@ async def update_subscription(
         if dto.billingCycle is not None:
             update_data["billingCycle"] = dto.billingCycle
         if dto.category is not None:
-            update_data["category"] = dto.category
+            # Validate categorization feature
+            if dto.category.strip() and dto.category.lower() != "uncategorized":
+                try:
+                    ensure_feature(account_type, "categorization")
+                    update_data["category"] = dto.category
+                except ValueError:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Categorization is a Pro feature. Upgrade to Pro to organize subscriptions by category."
+                    )
+            else:
+                update_data["category"] = "Uncategorized"
         if dto.description is not None:
             update_data["description"] = dto.description
         if dto.website is not None:
@@ -239,7 +277,18 @@ async def update_subscription(
         if dto.reminderEnabled is not None:
             update_data["reminderEnabled"] = dto.reminderEnabled
         if dto.reminderDaysBefore is not None:
-            update_data["reminderDaysBefore"] = dto.reminderDaysBefore
+            # Validate smart renewal management feature for custom reminder timing
+            if dto.reminderDaysBefore != 7:
+                try:
+                    ensure_feature(account_type, "smart_renewal_management")
+                    update_data["reminderDaysBefore"] = dto.reminderDaysBefore
+                except ValueError:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Custom reminder timing is a Pro feature. Free tier uses 7-day reminders. Upgrade to Pro for customizable reminders."
+                    )
+            else:
+                update_data["reminderDaysBefore"] = dto.reminderDaysBefore
         if dto.paymentMethod is not None:
             update_data["paymentMethod"] = dto.paymentMethod
         if dto.lastFourDigits is not None:
